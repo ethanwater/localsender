@@ -2,6 +2,8 @@ mod soi;
 
 fn main() -> std::io::Result<()> {
     let cmd = std::env::args().nth(1).expect("no pattern given");
+    let arg = std::env::args().nth(2).unwrap_or(String::from(""));
+    let os = std::env::consts::OS;
 
     match cmd.as_str() {
         "launch" => {
@@ -9,7 +11,11 @@ fn main() -> std::io::Result<()> {
                 soi_instance.launch().expect("🍜 soi | failed to launch");
             }
         }
-        "upload" => soi::client::upload("127.0.0.1:8080", "Makefile")?,
+        "upload" => match os {
+            "macos" | "linux" => soi::client::upload_unix("127.0.0.1:8080", arg.as_str(), 0)?,
+            "windows" => todo!(),
+            &_ => todo!(),
+        },
         &_ => todo!(),
     }
 

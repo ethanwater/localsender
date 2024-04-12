@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use super::packet;
+use super::object;
 use bincode;
 use core::time;
 use serde::ser::{Serialize, SerializeStruct, Serializer};
@@ -46,7 +46,7 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
 
         let cmd: ClientCommand = String::from("upload");
 
-        let object = packet::Packet {
+        let object = object::Packet {
             command: cmd,
             filename: filename.clone(),
             data: dataset.0,

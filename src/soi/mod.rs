@@ -1,3 +1,3 @@
 pub mod client;
-pub mod object;
+pub mod packet;
 pub mod server;
