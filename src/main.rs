@@ -16,6 +16,12 @@ fn main() -> std::io::Result<()> {
             "windows" => todo!(),
             &_ => todo!(),
         },
+        "download" => match os {
+            "macos" | "linux" => soi::client::download("127.0.0.1:8080", arg.as_str())?,
+            "windows" => todo!(),
+            &_ => todo!(),
+        },
+
         &_ => todo!(),
     }
 

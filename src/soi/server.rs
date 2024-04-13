@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use super::packet;
 use crate::soi::packet::Packet;
 use bincode;
 use std::fs::{self};
@@ -83,11 +84,12 @@ fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>) {
         let mut contents: Vec<u8> = Vec::new();
         stream
             .read_to_end(&mut contents)
-            .expect("🍜 soi | failed to write data to file");
+            .expect("🍜 soi | failed to read data");
 
         let packet: Packet = bincode::deserialize_from(&*contents)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            .unwrap();
+            .expect("shit");
+
         match packet.command.as_str() {
             "upload" => {
                 let _guard = lock.lock().unwrap();
@@ -98,12 +100,19 @@ fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>) {
                 );
                 fs::write(&packet.filename, &packet.data).unwrap();
             }
+            "download" => {
+                println!(
+                    "🍜 | soi retrieved request to send: {:?}",
+                    packet.filename
+                );
+                let bytes = fs::read(&packet.filename).unwrap();
+
+                stream.write_all(&bytes).expect("shit");
+                println!("dibe");
+            }
             &_ => todo!(),
         }
     })
     .join();
 }
 
-fn fetch_packet_directory() {
-    todo!();
-}

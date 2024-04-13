@@ -6,7 +6,7 @@ use core::time;
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::fs::{self, File};
 use std::io::{BufReader, IoSlice, Read, Write};
-use std::net::TcpStream;
+use std::net::{self, TcpStream};
 use std::path::PathBuf;
 use std::thread;
 
@@ -27,12 +27,12 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
                     println!("🍜 soi | the path does not exist.");
                     return Ok(());
                 }
-            },
+            }
             Err(error) => {
                 println!("🍜 soi | failure checking the path: {:?}", error);
                 return Err(error);
-            },
-        } 
+            }
+        }
 
         let dataset = self::obtain_bytes(filepath)?;
 
@@ -43,24 +43,22 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
                 .to_str()
                 .unwrap_or(filepath),
         );
-
         let cmd: ClientCommand = String::from("upload");
-
-        let object = packet::Packet {
+        let packet = packet::Packet {
             command: cmd,
-            filename: filename.clone(),
+            filename: filename,
             data: dataset.0,
             size: dataset.1,
         };
 
-        if let Ok(packet) = bincode::serialize(&object) {
+        if let Ok(packet) = bincode::serialize(&packet) {
             stream
                 .write(&packet)
                 .expect("🍜 soi | failed to ship to host");
-            println!("🍜 soi | {filename} shipped to {host}");
+            println!("🍜 soi | {filepath} shipped to {host}");
         };
 
-        std::mem::drop(object);
+        std::mem::drop(packet);
     } else {
         println!("🍜 soi | failed to connect to host, trying again in 3 seconds...");
         if attempts >= RETRY_COUNT {
@@ -89,8 +87,47 @@ fn detect_soi_instance() -> std::io::Result<()> {
     Ok(())
 }
 
-fn download(filename: &str, data: &[u8]) -> std::io::Result<()> {
-    let mut file = File::create(filename).expect("🍜 soi | failed to create file");
-    file.write_all(data);
+pub fn download(host: &str, filepath: &str) -> std::io::Result<()> {
+    if let Ok(mut stream) = TcpStream::connect(host) {
+        let filepath_buffer = PathBuf::from(filepath);
+        let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
+
+        let cmd: ClientCommand = String::from("download");
+        let packet = packet::Packet {
+            command: cmd,
+            filename: filename,
+            data: Vec::new(),
+            size: 0,
+        };
+
+        if let Ok(packet) = bincode::serialize(&packet) {
+            stream
+                .write(&packet)
+                .expect("🍜 soi | failed to download from host");
+            println!("🍜 soi | request for {filepath} sent to {host}");
+        };
+
+        return Ok(()); //ends the stream
+
+        //note to self:
+        //so heres the shit- the server waits for the stream to be complete in order to
+        //process the issue. what i mean by complete, is that this function needs to return.
+        //this is obviously a major fucking issue!
+        //because, althought we successfully sent the packet request for download, the server wont
+        //actually write it into the stream UNLESS this function/client is returned.
+        //
+        //so how the fuck do we fix this? its clearly a bug of shitty code im ngl.
+        //
+        //in orcder for us to read the bytes, keeping the stream alive, we gotta refactor this
+        //whole shit (probably)
+        //
+        //let bytes = [0; 10];
+        //stream.read(&mut bytes).expect("fuck");
+        //println!("{:?}", bytes);
+        //
+        //the server isnt sending anything while this stream is active.
+        //
+        //maybe we need some thread shit or soemthing, tokio perhaps?
+    }
     Ok(())
 }
