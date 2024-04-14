@@ -2,7 +2,8 @@ mod soi;
 
 fn main() -> std::io::Result<()> {
     let cmd = std::env::args().nth(1).expect("no pattern given");
-    let arg = std::env::args().nth(2).unwrap_or(String::from(""));
+    let host = std::env::args().nth(2).unwrap_or(String::from(""));
+    let arg = std::env::args().nth(3).unwrap_or(String::from(""));
     let os = std::env::consts::OS;
 
     match cmd.as_str() {
@@ -12,12 +13,12 @@ fn main() -> std::io::Result<()> {
             }
         }
         "upload" => match os {
-            "macos" | "linux" => soi::client::upload_unix("127.0.0.1:8080", arg.as_str(), 0)?,
+            "macos" | "linux" => soi::client::upload_unix(host.as_str(), arg.as_str(), 0)?,
             "windows" => todo!(),
             &_ => todo!(),
         },
         "download" => match os {
-            "macos" | "linux" => soi::client::download("127.0.0.1:8080", arg.as_str())?,
+            "macos" | "linux" => soi::client::download_unix(host.as_str(), arg.as_str())?,
             "windows" => todo!(),
             &_ => todo!(),
         },

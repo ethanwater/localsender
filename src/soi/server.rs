@@ -1,11 +1,12 @@
 #![allow(unused)]
 
 use super::packet;
+use super::utils;
 use crate::soi::packet::Packet;
 use bincode;
 use std::fs::{self};
 use std::io::{Read, Write};
-use std::net::{self, SocketAddr, TcpListener, TcpStream};
+use std::net::{self, SocketAddrV4,SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
 pub struct Soi {
@@ -69,8 +70,10 @@ impl Soi {
 }
 
 fn fetch_listener() -> std::io::Result<net::TcpListener> {
-    let listener: TcpListener =
-        net::TcpListener::bind("127.0.0.1:8080").expect("🍜 soi | unable to find available port");
+    let socket_addr: SocketAddr = utils::retrieve_socket_addr().expect("unable to obtain address");
+
+    let listener: TcpListener = net::TcpListener::bind(socket_addr)
+        .expect("🍜 soi | unable to find available port");
     let address: SocketAddr = listener.local_addr()?;
 
     println!("🍜 | soi hosting on {address}");
@@ -101,10 +104,7 @@ fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>) {
                 fs::write(&packet.filename, &packet.data).unwrap();
             }
             "download" => {
-                println!(
-                    "🍜 | soi retrieved request to send: {:?}",
-                    packet.filename
-                );
+                println!("🍜 | soi retrieved request to send: {:?}", packet.filename);
                 let bytes = fs::read(&packet.filename).unwrap();
 
                 stream.write_all(&bytes).expect("shit");
@@ -115,4 +115,3 @@ fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>) {
     })
     .join();
 }
-

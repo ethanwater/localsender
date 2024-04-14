@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use super::packet;
+use super::{packet, utils};
 use bincode;
 use core::time;
 use serde::ser::{Serialize, SerializeStruct, Serializer};
@@ -10,17 +10,13 @@ use std::net::{self, TcpStream};
 use std::path::PathBuf;
 use std::thread;
 
-const RETRY_COUNT: u8 = 5;
-
-type ClientCommand = String;
+const RETRY_COUNT: u8 = 3;
 
 pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Result<()> {
     //upload_unix() works under the assumption that both devices share similar endianess:
     //  -macOS uses ARM64  x86_64-based hardware: LITTLE ENDIAN
     //  -Most Linux systems today run on x86, x86_64, and ARM architectures, which are all little-endian by default.
-
-    if let Ok(mut stream) = TcpStream::connect(host) {
-        let filepath_buffer = PathBuf::from(filepath);
+       let filepath_buffer = PathBuf::from(filepath);
         match filepath_buffer.try_exists() {
             Ok(exists) => {
                 if !exists {
@@ -33,9 +29,7 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
                 return Err(error);
             }
         }
-
-        let dataset = self::obtain_bytes(filepath)?;
-
+    if let Ok(mut stream) = TcpStream::connect(host) {
         let filename = String::from(
             filepath_buffer
                 .file_name()
@@ -43,7 +37,10 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
                 .to_str()
                 .unwrap_or(filepath),
         );
-        let cmd: ClientCommand = String::from("upload");
+        println!("🍜 soi | shipping: {filename}");
+
+        let dataset = utils::obtain_bytes(filepath)?;
+        let cmd = String::from("upload");
         let packet = packet::Packet {
             command: cmd,
             filename: filename,
@@ -73,26 +70,18 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
     Ok(())
 }
 
-fn obtain_bytes(filepath: &str) -> std::io::Result<(Vec<u8>, usize)> {
-    let bytes = match fs::read(filepath) {
-        Ok(bytes) => bytes,
-        Err(e) => return Err(e),
-    };
-    let size = &bytes.len();
-    Ok((bytes, *size))
-}
 
 fn detect_soi_instance() -> std::io::Result<()> {
     todo!();
     Ok(())
 }
 
-pub fn download(host: &str, filepath: &str) -> std::io::Result<()> {
+pub fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     if let Ok(mut stream) = TcpStream::connect(host) {
         let filepath_buffer = PathBuf::from(filepath);
         let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
 
-        let cmd: ClientCommand = String::from("download");
+        let cmd = String::from("download");
         let packet = packet::Packet {
             command: cmd,
             filename: filename,
