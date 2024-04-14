@@ -1,35 +1,47 @@
-#![allow(unused)]
-
 use super::{packet, utils};
 use bincode;
 use core::time;
-use serde::ser::{Serialize, SerializeStruct, Serializer};
-use std::fs::{self, File};
-use std::io::{BufReader, IoSlice, Read, Write};
-use std::net::{self, TcpStream};
+use std::io::Write;
+use std::net::TcpStream;
 use std::path::PathBuf;
-use std::thread;
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 
-const RETRY_COUNT: u8 = 3;
+const UPLOAD_RETRY_COUNT: u8 = 3;
 
-pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Result<()> {
-    //upload_unix() works under the assumption that both devices share similar endianess:
+pub fn upload_force_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Result<()> {
+    //upload_force_unix() works under the assumption that both devices share similar endianess:
     //  -macOS uses ARM64  x86_64-based hardware: LITTLE ENDIAN
     //  -Most Linux systems today run on x86, x86_64, and ARM architectures, which are all little-endian by default.
-       let filepath_buffer = PathBuf::from(filepath);
-        match filepath_buffer.try_exists() {
-            Ok(exists) => {
-                if !exists {
-                    println!("🍜 soi | the path does not exist.");
-                    return Ok(());
-                }
-            }
-            Err(error) => {
-                println!("🍜 soi | failure checking the path: {:?}", error);
-                return Err(error);
+    //
+    //additionally:
+    //  -upload_force_unix() will overwrite any data if necessary. if the client wishes to not do this,
+    //  they will use upload_unix().
+
+    let filepath_buffer = PathBuf::from(filepath);
+    match filepath_buffer.try_exists() {
+        Ok(exists) => {
+            if !exists {
+                println!("🍜 soi | {filepath} does not exist");
+                return Ok(());
             }
         }
+        Err(error) => {
+            println!("🍜 soi | failure checking the path: {:?}", error);
+            return Err(error);
+        }
+    }
+
     if let Ok(mut stream) = TcpStream::connect(host) {
+        let (tx, rx): (Sender<u8>, Receiver<u8>) = mpsc::channel();
+
+        let _ = std::thread::spawn(move || loop {
+            if rx.recv().unwrap() == 1 {
+                println!("🍜 soi | shipped");
+                return;
+            }
+        });
+
         let filename = String::from(
             filepath_buffer
                 .file_name()
@@ -37,12 +49,11 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
                 .to_str()
                 .unwrap_or(filepath),
         );
-        println!("🍜 soi | shipping: {filename}");
+        println!("🍜 soi | shipping {filename}");
 
         let dataset = utils::obtain_bytes(filepath)?;
-        let cmd = String::from("upload");
         let packet = packet::Packet {
-            command: cmd,
+            command: String::from("upload--force"),
             filename: filename,
             data: dataset.0,
             size: dataset.1,
@@ -52,27 +63,18 @@ pub fn upload_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Res
             stream
                 .write(&packet)
                 .expect("🍜 soi | failed to ship to host");
-            println!("🍜 soi | {filepath} shipped to {host}");
+            tx.send(1).unwrap();
         };
-
-        std::mem::drop(packet);
     } else {
         println!("🍜 soi | failed to connect to host, trying again in 3 seconds...");
-        if attempts >= RETRY_COUNT {
+        if attempts >= UPLOAD_RETRY_COUNT {
             println!("🍜 soi | lmao rip");
             return Ok(());
         }
-        thread::sleep(time::Duration::from_secs(3));
+        std::thread::sleep(time::Duration::from_secs(3));
         attempts += 1;
-        upload_unix(host, filepath, attempts);
+        upload_force_unix(host, filepath, attempts).unwrap();
     }
-
-    Ok(())
-}
-
-
-fn detect_soi_instance() -> std::io::Result<()> {
-    todo!();
     Ok(())
 }
 

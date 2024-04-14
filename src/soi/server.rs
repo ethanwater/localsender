@@ -1,34 +1,22 @@
-#![allow(unused)]
 
-use super::packet;
 use super::utils;
 use crate::soi::packet::Packet;
 use bincode;
 use std::fs::{self};
 use std::io::{Read, Write};
-use std::net::{self, SocketAddrV4,SocketAddr, TcpListener, TcpStream};
+use std::net::{self, SocketAddr, TcpListener, TcpStream};
+use std::path;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
-
-pub struct Soi {
-    storage_volume: String,
-    storage_max: usize,
-    storage_available: usize,
-    storage_used: usize,
-    port: u16,
-    addr: net::IpAddr,
-    listener: net::TcpListener,
-    objects: usize,
-}
 
 pub fn build() -> std::io::Result<Soi> {
     if let Ok(fetched_listener) = fetch_listener() {
         let soi_instance = Soi {
-            storage_volume: String::from(""),
-            storage_max: std::usize::MAX,
-            storage_available: 0,
+            storage_location: String::from(""),
+            //storage_max: std::u64::MAX,
+            //storage_available: 0,
             storage_used: 0,
-            port: fetched_listener.local_addr()?.port(),
-            addr: fetched_listener.local_addr()?.ip(),
+            addr: fetched_listener.local_addr()?,
             listener: fetched_listener,
             objects: 0,
         };
@@ -40,49 +28,81 @@ pub fn build() -> std::io::Result<Soi> {
         ))
     }
 }
+pub struct Soi {
+    storage_location: String,
+    //storage_max: u64,
+    //storage_available: u64,
+    storage_used: usize,
+    addr: net::SocketAddr,
+    listener: net::TcpListener,
+    objects: usize,
+}
 
 impl Soi {
-    fn storage_update(&mut self) {
-        self.storage_available = self.storage_max - self.storage_used
+    fn calc_storage_used(&mut self) {
+        let storage = fs::read_dir(Path::new(&self.storage_location))
+            .expect("🍜 soi | storage location invalid");
+
+        for file in storage {
+            if file.is_ok() {
+                let metadata = file.unwrap().metadata().unwrap();
+                if metadata.is_file() {
+                    self.storage_used += metadata.len() as usize;
+                }
+                if metadata.is_dir() {
+                    todo!();
+                }
+                self.objects += 1;
+            }
+        }
     }
 
-    fn storage_fetch_volume_size(&mut self) {
-        todo!()
+    pub fn set_storage(&mut self, path: &str) {
+        self.storage_location = String::from(path)
     }
 
     pub fn launch(&mut self) -> std::io::Result<()> {
-        let mut listener = self
+        let storage_path = utils::soi_config();
+        if Path::exists(Path::new(storage_path.as_str())) {
+            self.set_storage(storage_path.as_str()); //not perfect, pretty shit, should improve
+        } else {
+            println!("🍜 soi | {storage_path} does not exist");
+        }
+        self.calc_storage_used();
+
+        let listener = self
             .listener
             .try_clone()
             .expect("🍜 soi | failed to initialize handle");
 
         let lock: Arc<Mutex<u8>> = Arc::new(Mutex::new(0));
 
+        println!(
+            "🍜 | soi hosting on {}\n     storage > {}",
+            self.addr,
+            self.storage_location
+        );
         for stream in listener.incoming() {
             let lock2 = Arc::clone(&lock);
             if stream.is_ok() {
-                process_packet(stream.unwrap(), lock2);
+                process_packet(stream.unwrap(), lock2, self.storage_location.clone());
             }
         }
-
         Ok(())
     }
 }
 
 fn fetch_listener() -> std::io::Result<net::TcpListener> {
-    let socket_addr: SocketAddr = utils::retrieve_socket_addr().expect("unable to obtain address");
+    let socket_addr: SocketAddr =
+        utils::retrieve_socket_addr().expect("🍜 soi | unable to obtain address");
 
-    let listener: TcpListener = net::TcpListener::bind(socket_addr)
-        .expect("🍜 soi | unable to find available port");
-    let address: SocketAddr = listener.local_addr()?;
+    let listener: TcpListener =
+        net::TcpListener::bind(socket_addr).expect("🍜 soi | unable to find available port");
 
-    println!("🍜 | soi hosting on {address}");
     Ok(listener)
 }
 
-fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>) {
-    //todo: make sure the file does not already exist. if it does, it requires a force shipment
-    //from the client
+fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String) {
     let _ = std::thread::spawn(move || {
         let mut contents: Vec<u8> = Vec::new();
         stream
@@ -91,24 +111,39 @@ fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>) {
 
         let packet: Packet = bincode::deserialize_from(&*contents)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            .expect("shit");
+            .expect("🍜 soi | shit...");
+
+        let uploaded_file_path = storage + packet.filename.as_str();
 
         match packet.command.as_str() {
-            "upload" => {
+            "upload--force" => {
                 let _guard = lock.lock().unwrap();
 
                 println!(
                     "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
                     packet.filename, packet.size
                 );
-                fs::write(&packet.filename, &packet.data).unwrap();
+                fs::write(&uploaded_file_path, &packet.data).unwrap();
+            }
+            "upload" => {
+                //todo: make sure the file does not already exist. if it does, it requires a force shipment from the client
+                let _guard = lock.lock().unwrap();
+
+                println!(
+                    "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
+                    packet.filename, packet.size
+                );
+
+                if !path::Path::exists(Path::new(&uploaded_file_path)) {
+                    fs::write(&uploaded_file_path, &packet.data).unwrap();
+                    return;
+                } //else, notify the client that the file already exists
             }
             "download" => {
                 println!("🍜 | soi retrieved request to send: {:?}", packet.filename);
                 let bytes = fs::read(&packet.filename).unwrap();
 
-                stream.write_all(&bytes).expect("shit");
-                println!("dibe");
+                stream.write_all(&bytes).expect("🍜 soi | shit...");
             }
             &_ => todo!(),
         }

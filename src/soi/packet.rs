@@ -1,7 +1,5 @@
-#![allow(unused)]
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use serde::Deserialize;
-use std::fs::{FileType, Metadata};
 
 #[derive(Debug, Deserialize)]
 pub struct Packet {

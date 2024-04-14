@@ -2,8 +2,4 @@ launch:
 	cargo run -- launch
 
 upload:
-	cargo run -- upload "src/soi/client.rs" 
-
-
-download:
-	cargo run -- download "src/soi/client.rs" 
+	cargo run -- upload 'host_addr' 'file_name' [option]
