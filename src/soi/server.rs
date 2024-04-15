@@ -1,4 +1,4 @@
-
+use super::config;
 use super::utils;
 use crate::soi::packet::Packet;
 use bincode;
@@ -57,17 +57,17 @@ impl Soi {
         }
     }
 
-    pub fn set_storage(&mut self, path: &str) {
-        self.storage_location = String::from(path)
+    pub fn set_storage(&mut self) {
+        let storage_path = config::soi_config();
+        if Path::exists(Path::new(storage_path.as_str())) {
+            self.storage_location = storage_path;
+            return;
+        }
+        println!("🍜 soi | {storage_path} does not exist");
     }
 
     pub fn launch(&mut self) -> std::io::Result<()> {
-        let storage_path = utils::soi_config();
-        if Path::exists(Path::new(storage_path.as_str())) {
-            self.set_storage(storage_path.as_str()); //not perfect, pretty shit, should improve
-        } else {
-            println!("🍜 soi | {storage_path} does not exist");
-        }
+        self.set_storage();
         self.calc_storage_used();
 
         let listener = self
@@ -79,8 +79,7 @@ impl Soi {
 
         println!(
             "🍜 | soi hosting on {}\n     storage > {}",
-            self.addr,
-            self.storage_location
+            self.addr, self.storage_location
         );
         for stream in listener.incoming() {
             let lock2 = Arc::clone(&lock);
@@ -103,50 +102,47 @@ fn fetch_listener() -> std::io::Result<net::TcpListener> {
 }
 
 fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String) {
-    let _ = std::thread::spawn(move || {
-        let mut contents: Vec<u8> = Vec::new();
-        stream
-            .read_to_end(&mut contents)
-            .expect("🍜 soi | failed to read data");
+    let mut contents: Vec<u8> = Vec::new();
+    stream
+        .read_to_end(&mut contents)
+        .expect("🍜 soi | failed to read data");
 
-        let packet: Packet = bincode::deserialize_from(&*contents)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            .expect("🍜 soi | shit...");
+    let packet: Packet = bincode::deserialize_from(&*contents)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        .expect("🍜 soi | shit...");
 
-        let uploaded_file_path = storage + packet.filename.as_str();
+    let uploaded_file_path = storage + packet.filename.as_str();
 
-        match packet.command.as_str() {
-            "upload--force" => {
-                let _guard = lock.lock().unwrap();
+    match packet.command.as_str() {
+        "upload--force" => {
+            let _guard = lock.lock().unwrap();
 
-                println!(
-                    "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
-                    packet.filename, packet.size
-                );
-                fs::write(&uploaded_file_path, &packet.data).unwrap();
-            }
-            "upload" => {
-                //todo: make sure the file does not already exist. if it does, it requires a force shipment from the client
-                let _guard = lock.lock().unwrap();
-
-                println!(
-                    "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
-                    packet.filename, packet.size
-                );
-
-                if !path::Path::exists(Path::new(&uploaded_file_path)) {
-                    fs::write(&uploaded_file_path, &packet.data).unwrap();
-                    return;
-                } //else, notify the client that the file already exists
-            }
-            "download" => {
-                println!("🍜 | soi retrieved request to send: {:?}", packet.filename);
-                let bytes = fs::read(&packet.filename).unwrap();
-
-                stream.write_all(&bytes).expect("🍜 soi | shit...");
-            }
-            &_ => todo!(),
+            println!(
+                "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
+                packet.filename, packet.size
+            );
+            fs::write(&uploaded_file_path, &packet.data).unwrap();
         }
-    })
-    .join();
+        "upload" => {
+            let _guard = lock.lock().unwrap();
+
+            println!(
+                "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
+                packet.filename, packet.size
+            );
+
+            if !path::Path::exists(Path::new(&uploaded_file_path)) {
+                fs::write(&uploaded_file_path, &packet.data).unwrap();
+                return;
+            } //todo: notify the client that the file already exists
+        }
+        "download" => {
+            println!("🍜 | soi retrieved request to send: {:?}", packet.filename);
+            let bytes = fs::read(&packet.filename).unwrap();
+
+            stream.write_all(&bytes).expect("🍜 soi | shit...");
+        }
+        &_ => todo!(),
+    }
+    std::mem::drop(packet);
 }

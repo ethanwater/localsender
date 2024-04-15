@@ -32,23 +32,26 @@ pub fn upload_force_unix(host: &str, filepath: &str, mut attempts: u8) -> std::i
         }
     }
 
+    let filename = String::from(
+        filepath_buffer
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap_or(filepath),
+    );
+
     if let Ok(mut stream) = TcpStream::connect(host) {
         let (tx, rx): (Sender<u8>, Receiver<u8>) = mpsc::channel();
+        let filename_thread = filename.clone();
+        let host_thread = host.to_string();
 
         let _ = std::thread::spawn(move || loop {
             if rx.recv().unwrap() == 1 {
-                println!("🍜 soi | shipped");
+                println!("🍜 soi | shipped {} to {}", filename_thread, host_thread);
                 return;
             }
         });
 
-        let filename = String::from(
-            filepath_buffer
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap_or(filepath),
-        );
         println!("🍜 soi | shipping {filename}");
 
         let dataset = utils::obtain_bytes(filepath)?;

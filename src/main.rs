@@ -39,7 +39,7 @@ fn main() -> std::io::Result<()> {
             &_ => todo!(),
         },
         "storage" => match second.as_str() {
-            "set" => todo!(),
+            "set" => soi::config::set_storage(&third)?,
             &_ => println!("🍜 soi | invalid command: {second}"),
         },
         &_ => println!("🍜 soi | invalid command: {cmd}"),
