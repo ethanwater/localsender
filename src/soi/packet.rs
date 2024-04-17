@@ -9,6 +9,8 @@ pub struct Packet {
     pub size: usize,
 }
 
+
+//TODO: do we async this?
 impl Serialize for Packet {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

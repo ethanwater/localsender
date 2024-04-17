@@ -1,15 +1,14 @@
+
+
 use super::{packet, utils};
 use bincode;
-use core::time;
-use std::io::Write;
-use std::net::TcpStream;
+use tokio::task;
+use tokio::net::TcpStream;
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
 
-const UPLOAD_RETRY_COUNT: u8 = 3;
+//const UPLOAD_RETRY_COUNT: u8 = 3;
 
-pub fn upload_force_unix(host: &str, filepath: &str, mut attempts: u8) -> std::io::Result<()> {
+pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     //upload_force_unix() works under the assumption that both devices share similar endianess:
     //  -macOS uses ARM64  x86_64-based hardware: LITTLE ENDIAN
     //  -Most Linux systems today run on x86, x86_64, and ARM architectures, which are all little-endian by default.
@@ -40,17 +39,20 @@ pub fn upload_force_unix(host: &str, filepath: &str, mut attempts: u8) -> std::i
             .unwrap_or(filepath),
     );
 
-    if let Ok(mut stream) = TcpStream::connect(host) {
-        let (tx, rx): (Sender<u8>, Receiver<u8>) = mpsc::channel();
-        let filename_thread = filename.clone();
-        let host_thread = host.to_string();
+    if let Ok(stream) = TcpStream::connect(host).await {
+        //TODO: merge channel to async runtime:
 
-        let _ = std::thread::spawn(move || loop {
-            if rx.recv().unwrap() == 1 {
-                println!("🍜 soi | shipped {} to {}", filename_thread, host_thread);
-                return;
-            }
-        });
+        //let (tx, rx): (Sender<u8>, Receiver<u8>) = mpsc::channel();
+
+        //let filename_thread = filename.clone();
+        //let host_thread = host.to_string();
+
+        //let _ = task::spawn(async { loop {
+        //    if rx.recv().unwrap() == 1 {
+        //        println!("🍜 soi | shipped {} to {}", filename_thread, host_thread);
+        //        return;
+        //    }
+        //}});
 
         println!("🍜 soi | shipping {filename}");
 
@@ -62,27 +64,31 @@ pub fn upload_force_unix(host: &str, filepath: &str, mut attempts: u8) -> std::i
             size: dataset.1,
         };
 
-        if let Ok(packet) = bincode::serialize(&packet) {
-            stream
-                .write(&packet)
-                .expect("🍜 soi | failed to ship to host");
-            tx.send(1).unwrap();
-        };
+        let handle = tokio::task::spawn(async move {
+            if let Ok(packet) = bincode::serialize(&packet) {
+                stream
+                    .try_write(&packet)
+                    .expect("🍜 soi | failed to ship to host");
+                //tx.send(1).unwrap();
+            }
+        });
+        let _ = handle.await;
     } else {
-        println!("🍜 soi | failed to connect to host, trying again in 3 seconds...");
-        if attempts >= UPLOAD_RETRY_COUNT {
-            println!("🍜 soi | lmao rip");
-            return Ok(());
-        }
-        std::thread::sleep(time::Duration::from_secs(3));
-        attempts += 1;
-        upload_force_unix(host, filepath, attempts).unwrap();
+        //TODO: FIX THIS RECURSION SHIT! BOX::PIN ?
+        //println!("🍜 soi | failed to connect to host, trying again in 3 seconds...");
+        //if attempts >= UPLOAD_RETRY_COUNT {
+        //    println!("🍜 soi | lmao rip");
+        //    return Ok(());
+        //}
+        //std::thread::sleep(time::Duration::from_secs(3));
+        //attempts += 1;
+        //upload_force_unix(host, filepath, attempts).await?;
     }
     Ok(())
 }
 
-pub fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
-    if let Ok(mut stream) = TcpStream::connect(host) {
+pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
+    if let Ok(stream) = TcpStream::connect(host).await {
         let filepath_buffer = PathBuf::from(filepath);
         let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
 
@@ -94,13 +100,18 @@ pub fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
             size: 0,
         };
 
-        if let Ok(packet) = bincode::serialize(&packet) {
-            stream
-                .write(&packet)
-                .expect("🍜 soi | failed to download from host");
-            println!("🍜 soi | request for {filepath} sent to {host}");
-        };
+        let (filepath_clone, host_clone) = (filepath.to_owned().clone(), host.to_owned().clone());
 
+        stream.readable().await?;
+        let handle = task::spawn(async move {
+            if let Ok(packet) = bincode::serialize(&packet) {
+                stream
+                    .try_write(&packet)
+                    .expect("🍜 soi | failed to download from host");
+                println!("🍜 soi | request for {filepath_clone} sent to {host_clone}");
+            }
+        });
+        let _ = handle.await;
         return Ok(()); //ends the stream
 
         //note to self:
