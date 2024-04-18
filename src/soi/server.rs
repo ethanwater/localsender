@@ -4,19 +4,19 @@ use super::config;
 use super::utils;
 use crate::soi::packet::Packet;
 use bincode;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use std::fs::{self};
-use std::io::{Read, Write};
-use std::net::{self, SocketAddr, TcpListener, TcpStream};
+use std::net::{self, SocketAddr};
 use std::path;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tokio::net::{TcpListener, TcpStream};
 
-pub fn build() -> std::io::Result<Soi> {
-    if let Ok(fetched_listener) = fetch_listener() {
+pub async fn build() -> std::io::Result<Soi> {
+    if let Ok(fetched_listener) = fetch_listener().await {
         let soi_instance = Soi {
             storage_location: String::from(""),
-            //storage_max: std::u64::MAX,
-            //storage_available: 0,
             storage_used: 0,
             addr: fetched_listener.local_addr()?,
             listener: fetched_listener,
@@ -32,16 +32,14 @@ pub fn build() -> std::io::Result<Soi> {
 }
 pub struct Soi {
     storage_location: String,
-    //storage_max: u64,
-    //storage_available: u64,
     storage_used: usize,
     addr: net::SocketAddr,
-    listener: net::TcpListener,
+    listener: tokio::net::TcpListener,
     objects: usize,
 }
 
 impl Soi {
-    fn calc_storage_used(&mut self) {
+    async fn calc_storage_used(&mut self) {
         let storage = fs::read_dir(Path::new(&self.storage_location))
             .expect("🍜 soi | storage location invalid");
 
@@ -59,7 +57,7 @@ impl Soi {
         }
     }
 
-    pub fn set_storage(&mut self) {
+    pub async fn set_storage(&mut self) {
         let storage_path = config::soi_config();
         if Path::exists(Path::new(storage_path.as_str())) {
             self.storage_location = storage_path;
@@ -68,54 +66,61 @@ impl Soi {
         println!("🍜 soi | {storage_path} does not exist");
     }
 
-    pub fn set_addr(&mut self, addr: &str) {
-        self.listener = TcpListener::bind(addr).expect("🍜 soi | unable to bind to provided address");
+    pub async fn set_addr(&mut self, addr: &str) {
+        self.listener = TcpListener::bind(addr)
+            .await
+            .expect("🍜 soi | unable to bind to provided address");
         self.addr = self.listener.local_addr().unwrap();
     }
 
-    pub fn launch(&mut self) -> std::io::Result<()> {
-        self.set_storage();
-        self.calc_storage_used();
+    pub async fn launch(&mut self) -> std::io::Result<()> {
+        self.set_storage().await;
+        self.calc_storage_used().await;
 
-        let listener = self
-            .listener
-            .try_clone()
-            .expect("🍜 soi | failed to initialize handle");
+        let listener = &self.listener;
 
         let lock: Arc<Mutex<u8>> = Arc::new(Mutex::new(0));
 
         println!(
-            "🍜 | soi hosting on {}\n     storage > {}",
+            "🍜 soi | hosting on {}\n     storage > {}",
             self.addr, self.storage_location
         );
-        for stream in listener.incoming() {
+
+        loop {
+            let (stream, _) = listener.accept().await?;
             let lock2 = Arc::clone(&lock);
-            if stream.is_ok() {
-                process_packet(stream.unwrap(), lock2, self.storage_location.clone());
-            }
+            stream.readable().await?;
+
+            process_packet(stream, lock2, self.storage_location.clone()).await;
         }
-        Ok(())
     }
 }
 
-fn fetch_listener() -> std::io::Result<net::TcpListener> {
+async fn fetch_listener() -> std::io::Result<tokio::net::TcpListener> {
     let socket_addr: SocketAddr =
         utils::retrieve_local_socket_addr().expect("🍜 soi | unable to obtain address");
 
-    if let Ok(listener) = net::TcpListener::bind(socket_addr) {
+    if let Ok(listener) = tokio::net::TcpListener::bind(socket_addr).await {
         return Ok(listener);
     } else {
-        if let Ok(listener) = net::TcpListener::bind("127.0.0.1:0") {
+        //questionable, i dont know if this should be the else case...
+        if let Ok(listener) = tokio::net::TcpListener::bind("127.0.0.1:0").await {
             return Ok(listener);
         };
-        return Err(std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "🍜 soi | unable to fetch listener"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            "🍜 soi | unable to fetch listener",
+        ));
     }
 }
 
-fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String) {
-    let mut contents: Vec<u8> = Vec::new();
+async fn process_packet(stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String) {
+    let mut contents: Vec<u8> = vec![];
+
+    let mut stream = stream;
     stream
         .read_to_end(&mut contents)
+        .await
         .expect("🍜 soi | failed to read data");
 
     let packet: Packet = bincode::deserialize_from(&*contents)
@@ -129,29 +134,35 @@ fn process_packet(mut stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String) 
             let _guard = lock.lock().unwrap();
 
             println!(
-                "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
+                "🍜 soi | retrieved: {:?} [size: {:?} bytes]",
                 packet.filename, packet.size
             );
             fs::write(&uploaded_file_path, &packet.data).unwrap();
+            println!("🍜 soi | {:?} has been overwritten", packet.filename);
         }
         "upload" => {
             let _guard = lock.lock().unwrap();
 
             println!(
-                "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
+                "🍜 soi | retrieved: {:?} [size: {:?} bytes]",
                 packet.filename, packet.size
             );
 
             if !path::Path::exists(Path::new(&uploaded_file_path)) {
                 fs::write(&uploaded_file_path, &packet.data).unwrap();
                 return;
-            } //todo: notify the client that the file already exists
+            }
+            println!(
+                "🍜  soi | {:?} already exists, will not write shipped file",
+                packet.filename
+            );
         }
         "download" => {
-            println!("🍜 | soi retrieved request to send: {:?}", packet.filename);
+            let _guard = lock.lock().unwrap();
+            println!("🍜 soi | retrieved request to send: {:?}", packet.filename);
             let bytes = fs::read(&packet.filename).unwrap();
 
-            stream.write_all(&bytes).expect("🍜 soi | shit...");
+            stream.write_all(&bytes).await.expect("🍜 soi | shit...");
         }
         &_ => todo!(),
     }
