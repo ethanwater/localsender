@@ -12,7 +12,6 @@ use std::path;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 
 pub async fn build() -> std::io::Result<Soi> {
     if let Ok(fetched_listener) = fetch_listener().await {
@@ -83,7 +82,7 @@ impl Soi {
         let lock: Arc<Mutex<u8>> = Arc::new(Mutex::new(0));
 
         println!(
-            "🍜 | soi hosting on {}\n     storage > {}",
+            "🍜 soi | hosting on {}\n     storage > {}",
             self.addr, self.storage_location
         );
 
@@ -135,16 +134,17 @@ async fn process_packet(stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String
             let _guard = lock.lock().unwrap();
 
             println!(
-                "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
+                "🍜 soi | retrieved: {:?} [size: {:?} bytes]",
                 packet.filename, packet.size
             );
             fs::write(&uploaded_file_path, &packet.data).unwrap();
+            println!("🍜 soi | {:?} has been overwritten", packet.filename);
         }
         "upload" => {
             let _guard = lock.lock().unwrap();
 
             println!(
-                "🍜 | soi retrieved: {:?} [size: {:?} bytes]",
+                "🍜 soi | retrieved: {:?} [size: {:?} bytes]",
                 packet.filename, packet.size
             );
 
@@ -153,13 +153,13 @@ async fn process_packet(stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String
                 return;
             }
             println!(
-                "🍜 | soi | {:?} already exists, will not write shipped file",
+                "🍜  soi | {:?} already exists, will not write shipped file",
                 packet.filename
             );
         }
         "download" => {
             let _guard = lock.lock().unwrap();
-            println!("🍜 | soi retrieved request to send: {:?}", packet.filename);
+            println!("🍜 soi | retrieved request to send: {:?}", packet.filename);
             let bytes = fs::read(&packet.filename).unwrap();
 
             stream.write_all(&bytes).await.expect("🍜 soi | shit...");

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 
 pub async fn upload_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     let filepath_buffer = PathBuf::from(filepath);
@@ -138,6 +138,7 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
     Ok(())
 }
 
+//TODO: this func is funcked
 pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     if let Ok(stream) = TcpStream::connect(host).await {
         let filepath_buffer = PathBuf::from(filepath);
