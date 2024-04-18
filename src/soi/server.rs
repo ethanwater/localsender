@@ -4,19 +4,20 @@ use super::config;
 use super::utils;
 use crate::soi::packet::Packet;
 use bincode;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use std::fs::{self};
 use std::net::{self, SocketAddr};
-use tokio::net::{TcpListener, TcpStream};
 use std::path;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 
 pub async fn build() -> std::io::Result<Soi> {
     if let Ok(fetched_listener) = fetch_listener().await {
         let soi_instance = Soi {
             storage_location: String::from(""),
-            //storage_max: std::u64::MAX,
-            //storage_available: 0,
             storage_used: 0,
             addr: fetched_listener.local_addr()?,
             listener: fetched_listener,
@@ -32,8 +33,6 @@ pub async fn build() -> std::io::Result<Soi> {
 }
 pub struct Soi {
     storage_location: String,
-    //storage_max: u64,
-    //storage_available: u64,
     storage_used: usize,
     addr: net::SocketAddr,
     listener: tokio::net::TcpListener,
@@ -69,7 +68,9 @@ impl Soi {
     }
 
     pub async fn set_addr(&mut self, addr: &str) {
-        self.listener = TcpListener::bind(addr).await.expect("🍜 soi | unable to bind to provided address");
+        self.listener = TcpListener::bind(addr)
+            .await
+            .expect("🍜 soi | unable to bind to provided address");
         self.addr = self.listener.local_addr().unwrap();
     }
 
@@ -78,7 +79,6 @@ impl Soi {
         self.calc_storage_used().await;
 
         let listener = &self.listener;
-            //.expect("🍜 soi | failed to initialize handle");
 
         let lock: Arc<Mutex<u8>> = Arc::new(Mutex::new(0));
 
@@ -90,7 +90,8 @@ impl Soi {
         loop {
             let (stream, _) = listener.accept().await?;
             let lock2 = Arc::clone(&lock);
-            stream.readable().await?; //do this here to ensure we dont call the next function on some bullshit
+            stream.readable().await?;
+
             process_packet(stream, lock2, self.storage_location.clone()).await;
         }
     }
@@ -103,17 +104,24 @@ async fn fetch_listener() -> std::io::Result<tokio::net::TcpListener> {
     if let Ok(listener) = tokio::net::TcpListener::bind(socket_addr).await {
         return Ok(listener);
     } else {
+        //questionable, i dont know if this should be the else case...
         if let Ok(listener) = tokio::net::TcpListener::bind("127.0.0.1:0").await {
             return Ok(listener);
         };
-        return Err(std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "🍜 soi | unable to fetch listener"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            "🍜 soi | unable to fetch listener",
+        ));
     }
 }
 
 async fn process_packet(stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String) {
-    let mut contents: Vec<u8> = Vec::new();
+    let mut contents: Vec<u8> = vec![];
+
+    let mut stream = stream;
     stream
-        .try_read(&mut contents)
+        .read_to_end(&mut contents)
+        .await
         .expect("🍜 soi | failed to read data");
 
     let packet: Packet = bincode::deserialize_from(&*contents)
@@ -143,13 +151,18 @@ async fn process_packet(stream: TcpStream, lock: Arc<Mutex<u8>>, storage: String
             if !path::Path::exists(Path::new(&uploaded_file_path)) {
                 fs::write(&uploaded_file_path, &packet.data).unwrap();
                 return;
-            } //todo: notify the client that the file already exists
+            }
+            println!(
+                "🍜 | soi | {:?} already exists, will not write shipped file",
+                packet.filename
+            );
         }
         "download" => {
+            let _guard = lock.lock().unwrap();
             println!("🍜 | soi retrieved request to send: {:?}", packet.filename);
             let bytes = fs::read(&packet.filename).unwrap();
 
-            stream.try_write(&bytes).expect("🍜 soi | shit...");
+            stream.write_all(&bytes).await.expect("🍜 soi | shit...");
         }
         &_ => todo!(),
     }

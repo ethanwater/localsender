@@ -16,7 +16,10 @@ async fn main() -> std::io::Result<()> {
     match cmd.as_str() {
         "launch" => {
             if let Ok(mut soi_instance) = soi::server::build().await {
-                soi_instance.launch().await.expect("🍜 soi | failed to launch");
+                soi_instance
+                    .launch()
+                    .await
+                    .expect("🍜 soi | failed to launch");
             }
         }
         "upload" => match fourth.as_str() {
@@ -28,14 +31,18 @@ async fn main() -> std::io::Result<()> {
                 &_ => todo!(),
             },
             "" => match os {
-                "macos" | "linux" => todo!(),
+                "macos" | "linux" => {
+                    soi::client::upload_unix(second.as_str(), third.as_str()).await?
+                }
                 "windows" => todo!(),
                 &_ => todo!(),
             },
             &_ => todo!(),
         },
         "download" => match os {
-            "macos" | "linux" => soi::client::download_unix(second.as_str(), third.as_str()).await?,
+            "macos" | "linux" => {
+                soi::client::download_unix(second.as_str(), third.as_str()).await?
+            }
             "windows" => todo!(),
             &_ => todo!(),
         },
