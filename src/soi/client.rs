@@ -1,13 +1,16 @@
+#![allow(unused)]
+
 use super::{packet, utils};
 use crate::soi::packet::Packet;
 use bincode;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task;
-use std::sync::Mutex;
 
 pub async fn upload_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     //upload_unix() works under the assumption that both devices share similar endianess:
@@ -162,38 +165,23 @@ pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
     let (filename_thread, host_thread) = (filename.clone(), host.to_string());
 
-
-    let (tx, mut rx) = mpsc::channel(1);
-    let _ = task::spawn(async move {
-        loop {
-            if rx.recv().await.unwrap() == 1 {
-                println!(
-                    "🍜 soi | sent request for {} to {}",
-                    filename_thread, host_thread
-                );
-                break;
-            }
-        }
-    });
-
     let packet = packet::Packet {
         command: String::from("download"),
         filename: filename,
-        data: vec![0,1],
+        data: vec![0, 1],
         size: 0,
     };
     let packet = bincode::serialize(&packet).unwrap();
 
-    let mut stream = TcpStream::connect(host).await?;
-    stream
-        .write_all(&packet)
-        .await
-        .unwrap();
+    let mut stream = std::net::TcpStream::connect(host)?;
+    stream.write_all(&packet).unwrap();
 
-    tx.send(1).await.unwrap(); 
-    stream.flush().await?;
+    let mut response = [0; 1024];
 
-    std::mem::drop(stream);
+    stream.read(&mut response).unwrap();
+
+    dbg!(&response);
+    fs::write("/Users/ethan/oof/Makefile", response);
 
     //loop {
     //    let mut response_buffer = Vec::new();
