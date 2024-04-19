@@ -23,3 +23,15 @@ pub fn obtain_bytes(filepath: &str) -> std::io::Result<(Vec<u8>, usize)> {
     let size = &bytes.len();
     Ok((bytes, *size))
 }
+
+pub fn username_unix() -> std::io::Result<String> {
+    match std::env::var("USER") {
+        Ok(username) => return Ok(username),
+        Err(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "🍜 soi | unable to obtain env::username",
+            ))
+        }
+    }
+}

@@ -1,15 +1,11 @@
 launch:
-	clear
-	cargo run -- launch
+	@cargo run -- launch
 
 upload:
-	clear
-	cargo run -- upload 192.168.1.171:8080 Makefile     
+	cargo run -- upload 10.162.34.191:8080 Makefile     
 
 upload-force:
-	clear
-	cargo run -- upload 192.168.1.171:8080 Makefile force 
+	cargo run -- upload 10.162.34.191:8080 Makefile force 
 
 download:
-	clear
-	cargo run -- download 192.168.1.171:8080 Girl-in-Space.jpg
+	cargo run -- download 192.168.200.48:8080 Makefile 

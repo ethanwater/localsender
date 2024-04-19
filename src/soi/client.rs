@@ -1,12 +1,24 @@
 use super::{packet, utils};
+use crate::soi::packet::Packet;
 use bincode;
+use std::fs;
 use std::path::PathBuf;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task;
-use tokio::io::AsyncWriteExt;
+use std::sync::Mutex;
 
 pub async fn upload_unix(host: &str, filepath: &str) -> std::io::Result<()> {
+    //upload_unix() works under the assumption that both devices share similar endianess:
+    //  -macOS uses ARM64  x86_64-based hardware: LITTLE ENDIAN
+    //  -Most Linux systems today run on x86, x86_64, and ARM architectures, which are all little-endian by default.
+    //
+    //note:
+    //  -upload_unix() will not overwrite any data if necessary. if the client wishes to not do this,
+    //  they must use upload_force_unix().
+    //  -this does not work on Windows.
+
     let filepath_buffer = PathBuf::from(filepath);
     match filepath_buffer.try_exists() {
         Ok(exists) => {
@@ -54,13 +66,17 @@ pub async fn upload_unix(host: &str, filepath: &str) -> std::io::Result<()> {
             size: dataset.1,
         };
 
-        if let Ok(packet) = bincode::serialize(&packet) {
-            stream
-                .write_all(&packet)
-                .await
-                .expect("🍜 soi | failed to ship to host");
-            tx.send(1).await.unwrap();
-        };
+        let handle = tokio::spawn(async move {
+            if let Ok(packet) = bincode::serialize(&packet) {
+                stream
+                    .write_all(&packet)
+                    .await
+                    .expect("🍜 soi | failed to ship to host");
+                tx.send(1).await.unwrap();
+            };
+            stream.shutdown().await.unwrap();
+        });
+        let _ = handle.await;
     } else {
         println!("🍜 soi | failed to connect to host");
     }
@@ -72,9 +88,10 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
     //  -macOS uses ARM64  x86_64-based hardware: LITTLE ENDIAN
     //  -Most Linux systems today run on x86, x86_64, and ARM architectures, which are all little-endian by default.
     //
-    //additionally:
+    //note:
     //  -upload_force_unix() will overwrite any data if necessary. if the client wishes to not do this,
-    //  they will use upload_unix().
+    //  they must use upload_unix().
+    //  -this does not work on Windows.
 
     let filepath_buffer = PathBuf::from(filepath);
     match filepath_buffer.try_exists() {
@@ -98,7 +115,7 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
             .unwrap_or(filepath),
     );
 
-    if let Ok(stream) = TcpStream::connect(host).await {
+    if let Ok(mut stream) = TcpStream::connect(host).await {
         let (tx, mut rx) = mpsc::channel(1);
 
         let filename_thread = filename.clone();
@@ -130,6 +147,7 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
                     .expect("🍜 soi | failed to ship to host");
                 tx.send(1).await.unwrap();
             }
+            stream.shutdown().await.unwrap();
         });
         let _ = handle.await;
     } else {
@@ -140,31 +158,50 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
 
 //TODO: this func is funcked
 pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
-    if let Ok(stream) = TcpStream::connect(host).await {
-        let filepath_buffer = PathBuf::from(filepath);
-        let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
+    let filepath_buffer = PathBuf::from(filepath);
+    let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
+    let (filename_thread, host_thread) = (filename.clone(), host.to_string());
 
-        let cmd = String::from("download");
-        let packet = packet::Packet {
-            command: cmd,
-            filename: filename,
-            data: Vec::new(),
-            size: 0,
-        };
 
-        let (filepath_clone, host_clone) = (filepath.to_owned().clone(), host.to_owned().clone());
-
-        stream.readable().await?;
-        let handle = task::spawn(async move {
-            if let Ok(packet) = bincode::serialize(&packet) {
-                stream
-                    .try_write(&packet)
-                    .expect("🍜 soi | failed to download from host");
-                println!("🍜 soi | request for {filepath_clone} sent to {host_clone}");
+    let (tx, mut rx) = mpsc::channel(1);
+    let _ = task::spawn(async move {
+        loop {
+            if rx.recv().await.unwrap() == 1 {
+                println!(
+                    "🍜 soi | sent request for {} to {}",
+                    filename_thread, host_thread
+                );
+                break;
             }
-        });
-        let _ = handle.await;
-        return Ok(());
-    }
+        }
+    });
+
+    let packet = packet::Packet {
+        command: String::from("download"),
+        filename: filename,
+        data: vec![0,1],
+        size: 0,
+    };
+    let packet = bincode::serialize(&packet).unwrap();
+
+    let mut stream = TcpStream::connect(host).await?;
+    stream
+        .write_all(&packet)
+        .await
+        .unwrap();
+
+    tx.send(1).await.unwrap(); 
+    stream.flush().await?;
+
+    std::mem::drop(stream);
+
+    //loop {
+    //    let mut response_buffer = Vec::new();
+    //    let bytes_read = stream.read(&mut response_buffer).await.unwrap();
+    //    if bytes_read > 0 {
+    //        dbg!(bytes_read);
+    //        return Ok(());
+    //    }
+    //}
     Ok(())
 }

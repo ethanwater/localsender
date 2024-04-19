@@ -10,8 +10,11 @@ async fn main() -> std::io::Result<()> {
         std::env::args().nth(4).unwrap_or(String::from("")),
     );
 
-    //yes, i know this parsing is shit. and yes, i know i should use clap. but respectfully i dont care too atm. rn, im focused on the code.
-    //not the fucking parsing!
+    //yes, i know this parsing is shit. and yes, i know i should use clap. but respectfully fuck that. because rn, im focused on the code.
+    //not the fucking parsing! what am i? a fucking js dev. nyan.
+
+    //on second thought, this is totally js dev like code- this parsing system isnt just shit, its deplorable. it really is fucking grotesque, like a naked molerat.
+    //wtv, doesnt change the system.
 
     match cmd.as_str() {
         "launch" => {
@@ -41,7 +44,7 @@ async fn main() -> std::io::Result<()> {
         },
         "download" => match os {
             "macos" | "linux" => {
-                soi::client::download_unix(second.as_str(), third.as_str()).await?
+                soi::client::download_unix(second.as_str(), third.as_str()).await?;
             }
             "windows" => todo!(),
             &_ => todo!(),
