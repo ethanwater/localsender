@@ -3,17 +3,17 @@ use std::io::BufRead;
 
 use super::utils;
 
-pub fn soi_config() -> std::io::Result<String> {
+pub async fn get_storage() -> std::io::Result<String> {
     let config: Vec<u8>;
     let username = utils::username_unix().unwrap();
 
     match std::env::consts::OS {
         "linux" => {
-            let path = "/home/".to_owned() + username.as_str() + "/.config/soiconfig";
+            let path = "/home/".to_owned() + username.as_str() + "/.config/config.soi";
             config = fs::read(path).expect("🍜 soi | configuration file does not exist");
         }
         "macos" => {
-            let path = "/Users/".to_owned() + username.as_str() + "/.config/soiconfig";
+            let path = "/Users/".to_owned() + username.as_str() + "/.config/config.soi";
             config = fs::read(path).expect("🍜 soi | configuration file does not exist");
         }
         &_ => todo!(),
@@ -38,13 +38,13 @@ pub fn set_storage(storage_path: &str) -> std::io::Result<()> {
     let username = utils::username_unix().unwrap();
     match std::env::consts::OS {
         "linux" => {
-            let path = "/home/".to_owned() + username.as_str() + "/.config/soiconfig";
+            let path = "/home/".to_owned() + username.as_str() + "/.config/config.soi";
             if let Ok(_) = fs::write(path, storage_path) {
                 return Ok(());
             }
         }
         "macos" => {
-            let path = "/Users/".to_owned() + username.as_str() + "/.config/soiconfig";
+            let path = "/Users/".to_owned() + username.as_str() + "/.config/config.soi";
             if let Ok(_) = fs::write(path, storage_path) {
                 return Ok(());
             }

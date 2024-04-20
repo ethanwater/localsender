@@ -159,7 +159,6 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
     Ok(())
 }
 
-//TODO: this func is funcked
 pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     let filepath_buffer = PathBuf::from(filepath);
     let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
@@ -167,7 +166,7 @@ pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
 
     let packet = packet::Packet {
         command: String::from("download"),
-        filename: filename,
+        filename: filename.clone(),
         data: vec![0, 1],
         size: 0,
     };
@@ -176,20 +175,11 @@ pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     let mut stream = std::net::TcpStream::connect(host)?;
     stream.write_all(&packet).unwrap();
 
-    let mut response = [0; 1024];
+    //TODO: response buffer has to be adaptable based on the file size. in the example of using the girl in space jpg,
+    //this works. hwoever, nothign else will work obv due to the fact that the buffer is either too alrge or too small.
+    let mut response = [0; 606242];
+    stream.read_exact(&mut response).unwrap();
 
-    stream.read(&mut response).unwrap();
-
-    dbg!(&response);
-    fs::write("/Users/ethan/oof/Makefile", response);
-
-    //loop {
-    //    let mut response_buffer = Vec::new();
-    //    let bytes_read = stream.read(&mut response_buffer).await.unwrap();
-    //    if bytes_read > 0 {
-    //        dbg!(bytes_read);
-    //        return Ok(());
-    //    }
-    //}
+    fs::write(filename, response);
     Ok(())
 }
