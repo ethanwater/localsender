@@ -1,39 +1,27 @@
-#![allow(dead_code)]
-#![allow(unused)]
-
-use super::config;
 use super::config::get_storage;
 use super::utils;
 use crate::soi::packet::Packet;
 use bincode;
-use core::time;
 use std::fs::{self};
 use std::io::{Read, Write};
-use std::net::{self, SocketAddr};
+use std::net::SocketAddr;
 use std::path;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
 
 pub async fn build() -> std::io::Result<Soi> {
     let soi_instance = Soi {
-        storage_location: String::from(""),
-        objects: 0,
+        //storage_location: String::from(""),
+        //objects: 0,
     };
     return Ok(soi_instance);
 }
-pub struct Soi {
-    storage_location: String,
-    objects: usize,
-}
+pub struct Soi {}
 
 impl Soi {
     pub async fn launch(&mut self) -> std::io::Result<()> {
         let listener = fetch_listener().await.unwrap();
-        dbg!(listener.local_addr());
+        dbg!(listener.local_addr()?);
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
@@ -53,7 +41,7 @@ impl Soi {
 
 async fn process_packet(mut stream: std::net::TcpStream, storage: String) {
     loop {
-        let mut buf = vec![0; 1024];
+        let mut buf = [0; 1024];
         let now = Instant::now();
 
         match stream.read(&mut buf) {
@@ -61,7 +49,7 @@ async fn process_packet(mut stream: std::net::TcpStream, storage: String) {
                 if n == 0 {
                     break;
                 }
-                buf.truncate(n);
+                //buf.truncate(n);
                 let packet: Result<Packet, bincode::Error> = bincode::deserialize_from(&buf[..]);
                 dbg!(&packet);
                 match packet {

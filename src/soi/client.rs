@@ -1,13 +1,8 @@
-#![allow(unused)]
-
 use super::{packet, utils};
-use crate::soi::packet::Packet;
 use bincode;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::Mutex;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task;
@@ -44,7 +39,7 @@ pub async fn upload_unix(host: &str, filepath: &str) -> std::io::Result<()> {
             .unwrap_or(filepath),
     );
 
-    if let Ok(mut stream) = TcpStream::connect(host).await {
+    if let Ok(mut stream) = std::net::TcpStream::connect(host) {
         let (tx, mut rx) = mpsc::channel(1);
 
         let filename_thread = filename.clone();
@@ -73,11 +68,9 @@ pub async fn upload_unix(host: &str, filepath: &str) -> std::io::Result<()> {
             if let Ok(packet) = bincode::serialize(&packet) {
                 stream
                     .write_all(&packet)
-                    .await
                     .expect("🍜 soi | failed to ship to host");
                 tx.send(1).await.unwrap();
             };
-            stream.shutdown().await.unwrap();
         });
         let _ = handle.await;
     } else {
@@ -118,7 +111,7 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
             .unwrap_or(filepath),
     );
 
-    if let Ok(mut stream) = TcpStream::connect(host).await {
+    if let Ok(stream) = TcpStream::connect(host).await {
         let (tx, mut rx) = mpsc::channel(1);
 
         let filename_thread = filename.clone();
@@ -150,7 +143,6 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
                     .expect("🍜 soi | failed to ship to host");
                 tx.send(1).await.unwrap();
             }
-            stream.shutdown().await.unwrap();
         });
         let _ = handle.await;
     } else {
@@ -162,7 +154,6 @@ pub async fn upload_force_unix(host: &str, filepath: &str) -> std::io::Result<()
 pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     let filepath_buffer = PathBuf::from(filepath);
     let filename = String::from(filepath_buffer.to_str().unwrap_or(filepath));
-    let (filename_thread, host_thread) = (filename.clone(), host.to_string());
 
     let packet = packet::Packet {
         command: String::from("download"),
@@ -180,6 +171,6 @@ pub async fn download_unix(host: &str, filepath: &str) -> std::io::Result<()> {
     let mut response = [0; 606242];
     stream.read_exact(&mut response).unwrap();
 
-    fs::write(filename, response);
+    fs::write(filename, response)?;
     Ok(())
 }
