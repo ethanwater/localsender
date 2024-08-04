@@ -26,13 +26,13 @@ async fn main() -> std::io::Result<()> {
             }
         }
         "upload" => match fourth.as_str() {
-            "force" => match os {
-                "macos" | "linux" => {
-                    soi::client::upload_force_unix(second.as_str(), third.as_str()).await?
-                }
-                "windows" => todo!(),
-                &_ => todo!(),
-            },
+            //"force" => match os {
+            //    "macos" | "linux" => {
+            //        soi::client::upload_force_unix(second.as_str(), third.as_str()).await?
+            //    }
+            //    "windows" => todo!(),
+            //    &_ => todo!(),
+            //},
             "" => match os {
                 "macos" | "linux" => {
                     soi::client::upload_unix(second.as_str(), third.as_str()).await?
